@@ -1,0 +1,12 @@
+[package]
+name = "stuck"
+version = "0.1.0"
+authors = ["Jon Gjengset <jon@thesquareplanet.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+rustc-demangle = "0.1.16"
+tui = "0.8"
+termion = "1.5"
