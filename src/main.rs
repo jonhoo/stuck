@@ -2,6 +2,7 @@ use futures_util::future::Either;
 use futures_util::stream::StreamExt;
 use std::collections::{BTreeMap, HashMap};
 use std::io::{self};
+use structopt::StructOpt;
 use termion::raw::IntoRawMode;
 use tokio::prelude::*;
 use tui::backend::Backend;
@@ -13,7 +14,17 @@ use tui::Terminal;
 
 const DRAW_EVERY: std::time::Duration = std::time::Duration::from_millis(200);
 const WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
-const EMULATE_TIME: bool = false;
+
+#[derive(Debug, StructOpt)]
+/// A live profile visualizer.
+///
+/// Pipe the output of the appropriate `bpftrace` command into this program, and enjoy.
+/// Happy profiling!
+struct Opt {
+    /// Treat input as a replay of a trace and emulate time accordingly.
+    #[structopt(long)]
+    replay: bool,
+}
 
 #[derive(Debug, Default)]
 struct Thread {
@@ -21,6 +32,8 @@ struct Thread {
 }
 
 fn main() -> Result<(), io::Error> {
+    let opt = Opt::from_args();
+
     if termion::is_tty(&io::stdin().lock()) {
         eprintln!("Don't type input to this program, that's silly.");
         return Ok(());
@@ -92,7 +105,7 @@ fn main() -> Result<(), io::Error> {
                                     .window
                                     .insert(time, stack);
 
-                                if EMULATE_TIME && lasttime != 0 {
+                                if opt.replay && lasttime != 0 && time - lasttime > 1_000_000 {
                                     tokio::time::delay_for(std::time::Duration::from_nanos(
                                         (time - lasttime) as u64,
                                     ))
