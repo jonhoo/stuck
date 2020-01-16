@@ -23,7 +23,7 @@ and every so often it does the following:
 It then displays these groups, along with their shared stacks and how
 many threads were a part of each one. What does it look like?
 
-[![asciicast](https://asciinema.org/a/293958.svg)](https://asciinema.org/a/293958)
+[![asciicast](https://asciinema.org/a/294135.svg)](https://asciinema.org/a/294135)
 
 ## How do you run it?
 
