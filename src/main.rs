@@ -256,14 +256,17 @@ fn draw<B: Backend>(
 
         for (i, frame) in stack.split(';').enumerate() {
             // https://github.com/alexcrichton/rustc-demangle/issues/34
+            let offset = &frame[frame.rfind('+').unwrap_or_else(|| frame.len())..];
+            let frame =
+                rustc_demangle::demangle(&frame[..frame.rfind('+').unwrap_or_else(|| frame.len())]);
             if i == 0 {
                 lines.push(Text::styled(
-                    format!("  {}\n", rustc_demangle::demangle(frame)),
+                    format!("  {}{}\n", frame, offset),
                     Style::default(),
                 ));
             } else {
                 lines.push(Text::styled(
-                    format!("  {}\n", rustc_demangle::demangle(frame)),
+                    format!("  {}{}\n", frame, offset),
                     Style::default().modifier(Modifier::DIM),
                 ));
             }

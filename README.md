@@ -68,6 +68,4 @@ $ env RUSTFLAGS='-Cforce-frame-pointers=yes' cargo build --release
 
 ## Development status
 
-Very much experimental. Broken in several known ways:
-
- - [Demangling does not work](https://github.com/alexcrichton/rustc-demangle/issues/34).
+Very much experimental. Probably broken in several.
