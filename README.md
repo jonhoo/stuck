@@ -5,8 +5,9 @@ applications.
 It is not a replacement for other profiling tools. `stuck` is very good
 at _one_ thing, and nothing else. Specifically, `stuck` shows you,
 roughly, **the deepest stack frame that most threads spend most of their
-time in**. Since that is the one thing `stuck` does, it's worth visiting
-in a bit more detail.
+time in**. And it does so _over time_, so that you can see how the
+hotspots of your program changes as execution progresses. Since that is
+the one thing `stuck` does, it's worth visiting in a bit more detail.
 
 Stuck samples the stack of all threads in your application periodically,
 and every so often it does the following:
@@ -22,7 +23,7 @@ and every so often it does the following:
 It then displays these groups, along with their shared stacks and how
 many threads were a part of each one. What does it look like?
 
-[![asciicast](https://asciinema.org/a/76Q7hTZjFizMKYlHknkxEOXQH.svg)](https://asciinema.org/a/76Q7hTZjFizMKYlHknkxEOXQH)
+[![asciicast](https://asciinema.org/a/293958.svg)](https://asciinema.org/a/293958)
 
 ## How do you run it?
 
