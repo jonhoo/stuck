@@ -10,3 +10,5 @@ edition = "2018"
 rustc-demangle = "0.1.16"
 tui = "0.8"
 termion = "1.5"
+tokio = { version = "0.2.0", features = ["rt-threaded", "io-std", "io-util", "time", "signal", "sync", "stream"] }
+futures-util = "0.3.0"

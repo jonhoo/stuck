@@ -1,6 +1,9 @@
+use futures_util::future::Either;
+use futures_util::stream::StreamExt;
 use std::collections::{BTreeMap, HashMap};
-use std::io::{self, BufRead, BufReader};
+use std::io::{self};
 use termion::raw::IntoRawMode;
+use tokio::prelude::*;
 use tui::backend::Backend;
 use tui::backend::TermionBackend;
 use tui::layout::{Constraint, Direction, Layout};
@@ -8,8 +11,9 @@ use tui::style::{Color, Modifier, Style};
 use tui::widgets::{Block, Borders, Paragraph, Text, Widget};
 use tui::Terminal;
 
-const DRAW_EVERY: std::time::Duration = std::time::Duration::from_secs(1);
-const WINDOW: std::time::Duration = std::time::Duration::from_secs(5);
+const DRAW_EVERY: std::time::Duration = std::time::Duration::from_millis(200);
+const WINDOW: std::time::Duration = std::time::Duration::from_secs(10);
+const EMULATE_TIME: bool = false;
 
 #[derive(Debug, Default)]
 struct Thread {
@@ -17,13 +21,14 @@ struct Thread {
 }
 
 fn main() -> Result<(), io::Error> {
+    if termion::is_tty(&io::stdin().lock()) {
+        eprintln!("Don't type input to this program, that's silly.");
+        return Ok(());
+    }
+
     let stdout = io::stdout().into_raw_mode()?;
     let backend = TermionBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
-
-    let stdin = io::stdin();
-    let stdin = stdin.lock();
-    let stdin = BufReader::new(stdin);
 
     let mut tids = BTreeMap::new();
     let mut inframe = None;
@@ -44,59 +49,99 @@ fn main() -> Result<(), io::Error> {
             .render(&mut f, chunks[0]);
     })?;
 
-    let mut lastprint = 0;
-    for line in stdin.lines() {
-        let line = line.unwrap();
-        if line.starts_with("Error") || line.starts_with("Attaching") {
-        } else if !line.starts_with(' ') || line.is_empty() {
-            if let Some((time, tid)) = inframe {
-                // new frame starts, so finish the old one
-                // skip empty stack frames
-                if !stack.is_empty() {
-                    let nxt_stack = String::with_capacity(stack.capacity());
-                    let mut stack = std::mem::replace(&mut stack, nxt_stack);
+    // a _super_ hacky way for us to get input from the TTY
+    let tty = termion::get_tty()?;
+    let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+    std::thread::spawn(move || {
+        use termion::input::TermRead;
+        for key in tty.keys() {
+            if let Err(_) = tx.send(key) {
+                return;
+            }
+        }
+    });
 
-                    // remove trailing ;
-                    let stackn = stack.len();
-                    stack.truncate(stackn - 1);
+    let mut rt = tokio::runtime::Runtime::new()?;
+    rt.block_on(async move {
+        let stdin = tokio::io::BufReader::new(tokio::io::stdin());
+        let lines = stdin.lines().map(Either::Left);
+        let rx = rx.map(Either::Right);
+        let mut input = futures_util::stream::select(lines, rx);
 
-                    tids.entry(tid)
-                        .or_insert_with(Thread::default)
-                        .window
-                        .insert(time, stack);
+        let mut lastprint = 0;
+        let mut lasttime = 0;
+        while let Some(got) = input.next().await {
+            match got {
+                Either::Left(line) => {
+                    let line = line.unwrap();
+                    if line.starts_with("Error") || line.starts_with("Attaching") {
+                    } else if !line.starts_with(' ') || line.is_empty() {
+                        if let Some((time, tid)) = inframe {
+                            // new frame starts, so finish the old one
+                            // skip empty stack frames
+                            if !stack.is_empty() {
+                                let nxt_stack = String::with_capacity(stack.capacity());
+                                let mut stack = std::mem::replace(&mut stack, nxt_stack);
 
-                    if std::time::Duration::from_nanos((time - lastprint) as u64) > DRAW_EVERY {
-                        draw(&mut terminal, &mut tids)?;
-                        lastprint = time;
+                                // remove trailing ;
+                                let stackn = stack.len();
+                                stack.truncate(stackn - 1);
+
+                                tids.entry(tid)
+                                    .or_insert_with(Thread::default)
+                                    .window
+                                    .insert(time, stack);
+
+                                if EMULATE_TIME && lasttime != 0 {
+                                    tokio::time::delay_for(std::time::Duration::from_nanos(
+                                        (time - lasttime) as u64,
+                                    ))
+                                    .await;
+                                }
+                                lasttime = time;
+                                if std::time::Duration::from_nanos((time - lastprint) as u64)
+                                    > DRAW_EVERY
+                                {
+                                    draw(&mut terminal, &mut tids)?;
+                                    lastprint = time;
+                                }
+                            }
+                            inframe = None;
+                        }
+
+                        if !line.is_empty() {
+                            // read time + tid
+                            let mut fields = line.split_whitespace();
+                            let time = fields
+                                .next()
+                                .expect("no time given for frame")
+                                .parse::<usize>()
+                                .expect("invalid time");
+                            let tid = fields
+                                .next()
+                                .expect("no tid given for frame")
+                                .parse::<usize>()
+                                .expect("invalid tid");
+                            inframe = Some((time, tid));
+                        }
+                    } else {
+                        assert!(inframe.is_some());
+                        stack.push_str(line.trim());
+                        stack.push(';');
                     }
                 }
-                inframe = None;
+                Either::Right(key) => {
+                    let key = key?;
+                    if let termion::event::Key::Char('q') = key {
+                        break;
+                    }
+                }
             }
-
-            if !line.is_empty() {
-                // read time + tid
-                let mut fields = line.split_whitespace();
-                let time = fields
-                    .next()
-                    .expect("no time given for frame")
-                    .parse::<usize>()
-                    .expect("invalid time");
-                let tid = fields
-                    .next()
-                    .expect("no tid given for frame")
-                    .parse::<usize>()
-                    .expect("invalid tid");
-                inframe = Some((time, tid));
-            }
-        } else {
-            assert!(inframe.is_some());
-            stack.push_str(line.trim());
-            stack.push(';');
         }
-    }
-    terminal.clear()?;
 
-    Ok(())
+        terminal.clear()?;
+        Ok(())
+    })
 }
 
 fn draw<B: Backend>(
@@ -166,6 +211,7 @@ fn draw<B: Backend>(
 
     for (stack, (nthreads, count)) in maxes.iter().rev() {
         let count = *count;
+        let nthreads = *nthreads;
 
         if stack.find(';').is_none() {
             // this thread just shares the root frame
@@ -180,9 +226,9 @@ fn draw<B: Backend>(
         let red = (128.0 * count as f64 / max) as u8;
         let color = Color::Rgb(255, 128 - red, 128 - red);
 
-        if threads.len() == 1 {
+        if nthreads == 1 {
             lines.push(Text::styled(
-                format!("A thread fanned out from here {} times)\n", count),
+                format!("A thread fanned out from here {} times\n", count),
                 Style::default().modifier(Modifier::BOLD).fg(color),
             ));
         } else {
